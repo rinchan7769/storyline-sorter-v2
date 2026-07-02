@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f0f12">
+<title>Storyline Sorter</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sorter">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{
+  --bg:#0f0f12; --panel:#17171c; --panel2:#1e1e25;
+  --purple:#8b3dff; --mint:#00c49f; --red:#ff4d6d;
+  --text:#e8e6f0; --dim:#8a8794; --line:#2a2a33;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',system-ui,sans-serif;
+  display:flex; flex-direction:column;
+  user-select:none; -webkit-user-select:none;
+}
+
+/* ===== header ===== */
+header{
+  padding:10px 14px 8px;
+  background:linear-gradient(180deg,#17171c,#131318);
+  border-bottom:1px solid var(--line);
+  position:sticky; top:0; z-index:20;
+}
+.title-row{display:flex; align-items:baseline; gap:8px}
+h1{font-size:15px; font-weight:800; letter-spacing:.06em}
+h1 .accent{color:var(--purple)}
+.counts{font-size:11px; color:var(--dim); margin-left:auto; font-variant-numeric:tabular-nums}
+.counts b{color:var(--mint); font-weight:700}
+
+.tabs{display:flex; gap:6px; margin-top:8px}
+.tab{
+  flex:1; padding:7px 0; text-align:center; font-size:12px; font-weight:700;
+  border-radius:8px; background:var(--panel2); color:var(--dim);
+  border:1px solid var(--line);
+}
+.tab.active{background:var(--purple); color:#fff; border-color:var(--purple)}
+.tab.active.botsu-tab{background:var(--red); border-color:var(--red)}
+
+.modebar{display:flex; gap:6px; margin-top:8px}
+.mode-btn{
+  flex:1; padding:8px 0; font-size:12px; font-weight:700;
+  border-radius:8px; border:1px solid var(--line);
+  background:var(--panel2); color:var(--dim);
+}
+.mode-btn.on{background:rgba(0,196,159,.15); color:var(--mint); border-color:var(--mint)}
+
+/* ===== grid ===== */
+main{flex:1; overflow-y:auto; padding:10px; padding-bottom:110px}
+#grid{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+}
+@media(min-width:560px){#grid{grid-template-columns:repeat(5,1fr)}}
+@media(min-width:900px){#grid{grid-template-columns:repeat(7,1fr)}}
+
+.cell{
+  position:relative; aspect-ratio:3/4; border-radius:10px; overflow:hidden;
+  background:var(--panel); border:2px solid transparent;
+  transition:transform .15s, border-color .15s, opacity .15s;
+}
+.cell img{width:100%; height:100%; object-fit:cover; pointer-events:none; display:block}
+.cell .num{
+  position:absolute; top:4px; left:4px;
+  background:rgba(15,15,18,.8); color:var(--text);
+  font-size:10px; font-weight:700; padding:2px 6px; border-radius:6px;
+  font-variant-numeric:tabular-nums;
+}
+.cell.selected{border-color:var(--mint); transform:scale(.95)}
+.cell.selected::after{
+  content:attr(data-pick);
+  position:absolute; top:4px; right:4px;
+  background:var(--mint); color:#06231d;
+  font-size:11px; font-weight:800; min-width:20px; height:20px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:10px; padding:0 4px;
+}
+.cell.dragging{opacity:.25}
+.cell.drop-target{border-color:var(--purple)}
+body.sort-mode .cell{touch-action:none}
+
+#ghost{
+  position:fixed; z-index:100; pointer-events:none;
+  width:90px; aspect-ratio:3/4; border-radius:10px; overflow:hidden;
+  border:2px solid var(--purple); box-shadow:0 8px 30px rgba(139,61,255,.5);
+  display:none;
+}
+#ghost img{width:100%; height:100%; object-fit:cover}
+
+.empty{
+  grid-column:1/-1; text-align:center; padding:60px 20px; color:var(--dim);
+  font-size:13px; line-height:2;
+}
+.empty .big{font-size:34px}
+
+/* ===== footer ===== */
+footer{
+  position:fixed; left:0; right:0; bottom:0; z-index:30;
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+  background:linear-gradient(0deg,#131318 70%,transparent);
+}
+.fbar{display:flex; gap:8px}
+.fbtn{
+  flex:1; padding:12px 0; border-radius:12px; font-size:13px; font-weight:800;
+  border:none; color:#fff;
+}
+.fbtn.primary{background:var(--purple)}
+.fbtn.mint{background:var(--mint); color:#06231d}
+.fbtn.ghost-btn{background:var(--panel2); color:var(--text); border:1px solid var(--line)}
+.fbtn.danger{background:var(--red)}
+.fbtn:disabled{opacity:.35}
+
+/* selection action bar */
+#selbar{display:none}
+#selbar.show{display:flex}
+
+/* ===== preview ===== */
+#preview{
+  position:fixed; inset:0; z-index:50; background:rgba(10,10,13,.97);
+  display:none; flex-direction:column; touch-action:none;
+}
+#preview.show{display:flex}
+#pv-img-wrap{flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden}
+#pv-img{max-width:100%; max-height:100%; object-fit:contain}
+#pv-top{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:12px 16px; font-size:12px; color:var(--dim);
+}
+#pv-top .idx{color:var(--mint); font-weight:700; font-variant-numeric:tabular-nums}
+#pv-bottom{display:flex; gap:8px; padding:10px 12px calc(12px + env(safe-area-inset-bottom))}
+
+/* ===== toast / dialog ===== */
+#toast{
+  position:fixed; bottom:120px; left:50%; transform:translateX(-50%);
+  background:var(--panel2); border:1px solid var(--mint); color:var(--mint);
+  font-size:12px; font-weight:700; padding:8px 16px; border-radius:20px;
+  z-index:60; opacity:0; transition:opacity .3s; pointer-events:none;
+  white-space:nowrap;
+}
+#toast.show{opacity:1}
+
+#fileInput{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-row">
+    <h1>STORYLINE <span class="accent">SORTER</span></h1>
+    <div class="counts">採用 <b id="cnt-keep">0</b> / ボツ <span id="cnt-botsu">0</span></div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" id="tab-keep">採用 (構成)</div>
+    <div class="tab botsu-tab" id="tab-botsu">ボツ</div>
+  </div>
+  <div class="modebar" id="modebar">
+    <button class="mode-btn on" id="mode-tap">タップ: プレビュー</button>
+    <button class="mode-btn" id="mode-select">選択して挿入</button>
+    <button class="mode-btn" id="mode-drag">ドラッグ並べ替え</button>
+  </div>
+</header>
+
+<main id="main">
+  <div id="grid"></div>
+</main>
+
+<div id="ghost"><img id="ghost-img"></div>
+
+<footer>
+  <div class="fbar" id="selbar">
+    <button class="fbtn danger" id="sel-botsu">ボツへ</button>
+    <button class="fbtn mint" id="sel-last">末尾へ移動</button>
+    <button class="fbtn ghost-btn" id="sel-cancel">解除</button>
+  </div>
+  <div class="fbar" id="mainbar">
+    <button class="fbtn ghost-btn" id="btn-add">＋ 画像追加</button>
+    <button class="fbtn primary" id="btn-export">order.json 出力</button>
+    <button class="fbtn mint" id="btn-zip">ZIP出力</button>
+  </div>
+</footer>
+
+<div id="preview">
+  <div id="pv-top">
+    <span class="idx" id="pv-idx"></span>
+    <span id="pv-name"></span>
+    <span id="pv-close" style="font-size:20px;color:var(--text);padding:0 6px">✕</span>
+  </div>
+  <div id="pv-img-wrap"><img id="pv-img"></div>
+  <div id="pv-bottom">
+    <button class="fbtn danger" id="pv-botsu">ボツ</button>
+    <button class="fbtn ghost-btn" id="pv-prev">◀ 前</button>
+    <button class="fbtn ghost-btn" id="pv-next">次 ▶</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="fileInput" accept="image/*" multiple>
+
+<script>
+/* ================= state & db ================= */
+const state = {
+  order: [],      // 採用 image ids (storyline order)
+  botsu: [],      // botsu image ids
+  tab: 'keep',    // keep | botsu
+  mode: 'tap',    // tap | select | drag
+  picks: [],      // selected ids in pick order
+  images: new Map(), // id -> {name, url(thumb), fullBlob}
+};
+let db;
+
+function openDB(){
+  return new Promise((res,rej)=>{
+    const req = indexedDB.open('storyline-sorter', 1);
+    req.onupgradeneeded = e=>{
+      const d = e.target.result;
+      d.createObjectStore('images', {keyPath:'id'});
+      d.createObjectStore('meta', {keyPath:'key'});
+    };
+    req.onsuccess = e=>{db=e.target.result; res();};
+    req.onerror = ()=>rej(req.error);
+  });
+}
+function tx(store, mode='readonly'){ return db.transaction(store, mode).objectStore(store); }
+function put(store, val){ return new Promise((res,rej)=>{const r=tx(store,'readwrite').put(val); r.onsuccess=res; r.onerror=()=>rej(r.error);}); }
+function del(store, key){ return new Promise((res,rej)=>{const r=tx(store,'readwrite').delete(key); r.onsuccess=res; r.onerror=()=>rej(r.error);}); }
+function getAll(store){ return new Promise((res,rej)=>{const r=tx(store).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);}); }
+
+async function saveMeta(){
+  await put('meta', {key:'state', order:state.order, botsu:state.botsu});
+}
+
+/* ================= load ================= */
+async function init(){
+  await openDB();
+  const metas = await getAll('meta');
+  const m = metas.find(x=>x.key==='state');
+  const imgs = await getAll('images');
+  for(const rec of imgs){
+    state.images.set(rec.id, {
+      name: rec.name,
+      url: URL.createObjectURL(rec.thumb),
+      fullBlob: rec.full,
+    });
+  }
+  if(m){
+    state.order = m.order.filter(id=>state.images.has(id));
+    state.botsu = m.botsu.filter(id=>state.images.has(id));
+  }
+  // orphans -> append
+  for(const id of state.images.keys()){
+    if(!state.order.includes(id) && !state.botsu.includes(id)) state.order.push(id);
+  }
+  render();
+}
+
+/* ================= add images ================= */
+async function makeThumb(file){
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 360 / Math.max(bmp.width,bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width*scale); c.height = Math.round(bmp.height*scale);
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  bmp.close();
+  return new Promise(res=>c.toBlob(res,'image/jpeg',.82));
+}
+
+document.getElementById('btn-add').onclick = ()=>document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = async e=>{
+  const files = [...e.target.files];
+  if(!files.length) return;
+  toast(`読込中... 0/${files.length}`);
+  let n=0;
+  const existing = new Set([...state.images.values()].map(v=>v.name));
+  for(const f of files){
+    if(existing.has(f.name)){ n++; continue; } // skip duplicates by name
+    try{
+      const thumb = await makeThumb(f);
+      const id = crypto.randomUUID();
+      await put('images', {id, name:f.name, thumb, full:f});
+      state.images.set(id, {name:f.name, url:URL.createObjectURL(thumb), fullBlob:f});
+      state.order.push(id);
+    }catch(err){ console.warn('skip', f.name, err); }
+    n++;
+    if(n % 10 === 0) toast(`読込中... ${n}/${files.length}`);
+  }
+  await saveMeta();
+  e.target.value='';
+  toast(`${files.length}枚 読み込み完了`);
+  render();
+};
+
+/* ================= render ================= */
+const grid = document.getElementById('grid');
+
+function currentList(){ return state.tab==='keep' ? state.order : state.botsu; }
+
+function render(){
+  document.getElementById('cnt-keep').textContent = state.order.length;
+  document.getElementById('cnt-botsu').textContent = state.botsu.length;
+  document.getElementById('tab-keep').classList.toggle('active', state.tab==='keep');
+  document.getElementById('tab-botsu').classList.toggle('active', state.tab==='botsu');
+  document.getElementById('modebar').style.display = state.tab==='keep' ? 'flex' : 'none';
+  document.body.classList.toggle('sort-mode', state.mode==='drag' && state.tab==='keep');
+  updateSelbar();
+
+  grid.innerHTML='';
+  const list = currentList();
+  if(!list.length){
+    grid.innerHTML = state.tab==='keep'
+      ? `<div class="empty"><div class="big">📱</div>「＋ 画像追加」でPCから同期した画像を読み込み<br>タップでプレビュー / モードを切り替えて構成</div>`
+      : `<div class="empty"><div class="big">🗑</div>ボツはまだありません</div>`;
+    return;
+  }
+  list.forEach((id,i)=>{
+    const info = state.images.get(id);
+    const cell = document.createElement('div');
+    cell.className='cell'; cell.dataset.id=id;
+    const pickIdx = state.picks.indexOf(id);
+    if(pickIdx>=0){ cell.classList.add('selected'); cell.dataset.pick = pickIdx+1; }
+    cell.innerHTML = `<img src="${info.url}" loading="lazy"><span class="num">${String(i+1).padStart(3,'0')}</span>`;
+    grid.appendChild(cell);
+  });
+}
+
+/* ================= tabs & modes ================= */
+document.getElementById('tab-keep').onclick = ()=>{ state.tab='keep'; state.picks=[]; render(); };
+document.getElementById('tab-botsu').onclick = ()=>{ state.tab='botsu'; state.picks=[]; render(); };
+
+function setMode(m){
+  state.mode=m; state.picks=[];
+  document.getElementById('mode-tap').classList.toggle('on', m==='tap');
+  document.getElementById('mode-select').classList.toggle('on', m==='select');
+  document.getElementById('mode-drag').classList.toggle('on', m==='drag');
+  render();
+}
+document.getElementById('mode-tap').onclick = ()=>setMode('tap');
+document.getElementById('mode-select').onclick = ()=>setMode('select');
+document.getElementById('mode-drag').onclick = ()=>setMode('drag');
+
+/* ================= tap handling ================= */
+grid.addEventListener('click', e=>{
+  const cell = e.target.closest('.cell');
+  if(!cell || dragState.active) return;
+  const id = cell.dataset.id;
+
+  if(state.tab==='botsu'){ openPreview(id); return; }
+
+  if(state.mode==='tap'){ openPreview(id); return; }
+
+  if(state.mode==='select'){
+    const pi = state.picks.indexOf(id);
+    if(pi>=0){ state.picks.splice(pi,1); render(); return; }
+    if(state.picks.length){
+      // insert picks BEFORE tapped cell
+      moveSelectionBefore(id);
+    }else{
+      state.picks.push(id); render();
+    }
+  }
+});
+
+// long-press in select mode adds to selection instead of inserting
+let lpTimer=null;
+grid.addEventListener('pointerdown', e=>{
+  if(state.mode!=='select' || state.tab!=='keep') return;
+  const cell = e.target.closest('.cell'); if(!cell) return;
+  const id = cell.dataset.id;
+  lpTimer = setTimeout(()=>{
+    lpTimer=null;
+    if(!state.picks.includes(id)){ state.picks.push(id); navigator.vibrate?.(20); render(); }
+  }, 420);
+});
+grid.addEventListener('pointerup', ()=>{ if(lpTimer){clearTimeout(lpTimer); lpTimer=null;} });
+grid.addEventListener('pointermove', ()=>{ if(lpTimer){clearTimeout(lpTimer); lpTimer=null;} });
+
+function moveSelectionBefore(targetId){
+  if(state.picks.includes(targetId)) return;
+  const picks = [...state.picks];
+  state.order = state.order.filter(x=>!picks.includes(x));
+  const idx = state.order.indexOf(targetId);
+  state.order.splice(idx, 0, ...picks);
+  state.picks=[];
+  saveMeta(); render();
+  toast(`${picks.length}枚を挿入`);
+}
+
+function updateSelbar(){
+  const show = state.mode==='select' && state.picks.length>0 && state.tab==='keep';
+  document.getElementById('selbar').classList.toggle('show', show);
+  document.getElementById('mainbar').style.display = show ? 'none' : 'flex';
+}
+document.getElementById('sel-cancel').onclick = ()=>{ state.picks=[]; render(); };
+document.getElementById('sel-last').onclick = ()=>{
+  const picks=[...state.picks];
+  state.order = state.order.filter(x=>!picks.includes(x)).concat(picks);
+  state.picks=[]; saveMeta(); render(); toast(`${picks.length}枚を末尾へ`);
+};
+document.getElementById('sel-botsu').onclick = ()=>{
+  const picks=[...state.picks];
+  state.order = state.order.filter(x=>!picks.includes(x));
+  state.botsu.push(...picks);
+  state.picks=[]; saveMeta(); render(); toast(`${picks.length}枚をボツへ`);
+};
+
+/* ================= drag reorder ================= */
+const ghost = document.getElementById('ghost');
+const ghostImg = document.getElementById('ghost-img');
+const dragState = {active:false, id:null, cell:null};
+
+grid.addEventListener('pointerdown', e=>{
+  if(state.mode!=='drag' || state.tab!=='keep') return;
+  const cell = e.target.closest('.cell'); if(!cell) return;
+  e.preventDefault();
+  dragState.active=true; dragState.id=cell.dataset.id; dragState.cell=cell;
+  cell.classList.add('dragging');
+  ghostImg.src = state.images.get(dragState.id).url;
+  ghost.style.display='block';
+  moveGhost(e.clientX, e.clientY);
+  grid.setPointerCapture?.(e.pointerId);
+});
+
+window.addEventListener('pointermove', e=>{
+  if(!dragState.active) return;
+  e.preventDefault();
+  moveGhost(e.clientX, e.clientY);
+  autoScroll(e.clientY);
+  const target = targetCellAt(e.clientX, e.clientY);
+  document.querySelectorAll('.cell.drop-target').forEach(c=>c.classList.remove('drop-target'));
+  if(target && target!==dragState.cell){
+    target.classList.add('drop-target');
+    // live reorder in DOM
+    const cells = [...grid.children];
+    const from = cells.indexOf(dragState.cell);
+    const to = cells.indexOf(target);
+    if(from < to) target.after(dragState.cell);
+    else target.before(dragState.cell);
+  }
+}, {passive:false});
+
+window.addEventListener('pointerup', ()=>{
+  if(!dragState.active) return;
+  dragState.active=false;
+  ghost.style.display='none';
+  dragState.cell.classList.remove('dragging');
+  document.querySelectorAll('.cell.drop-target').forEach(c=>c.classList.remove('drop-target'));
+  // read new order from DOM
+  state.order = [...grid.querySelectorAll('.cell')].map(c=>c.dataset.id);
+  saveMeta();
+  // renumber
+  grid.querySelectorAll('.cell').forEach((c,i)=>{
+    c.querySelector('.num').textContent = String(i+1).padStart(3,'0');
+  });
+});
+
+function moveGhost(x,y){
+  ghost.style.left = (x-45)+'px';
+  ghost.style.top = (y-70)+'px';
+}
+function targetCellAt(x,y){
+  ghost.style.pointerEvents='none';
+  const el = document.elementFromPoint(x,y);
+  return el ? el.closest('.cell') : null;
+}
+const mainEl = document.getElementById('main');
+function autoScroll(y){
+  const h = window.innerHeight;
+  if(y < 130) mainEl.scrollBy(0, -14);
+  else if(y > h-130) mainEl.scrollBy(0, 14);
+}
+
+/* ================= preview ================= */
+const pv = document.getElementById('preview');
+let pvIdx = 0;
+let pvList = [];
+
+function openPreview(id){
+  pvList = currentList();
+  pvIdx = pvList.indexOf(id);
+  showPv();
+  pv.classList.add('show');
+}
+function showPv(){
+  if(pvIdx<0 || pvIdx>=pvList.length){ pv.classList.remove('show'); return; }
+  const id = pvList[pvIdx];
+  const info = state.images.get(id);
+  const img = document.getElementById('pv-img');
+  URL.revokeObjectURL(img.dataset.tmp||'');
+  const u = URL.createObjectURL(info.fullBlob);
+  img.src = u; img.dataset.tmp = u;
+  document.getElementById('pv-idx').textContent = `${String(pvIdx+1).padStart(3,'0')} / ${pvList.length}`;
+  document.getElementById('pv-name').textContent = info.name;
+  document.getElementById('pv-botsu').textContent = state.tab==='keep' ? 'ボツ' : '復活';
+}
+document.getElementById('pv-close').onclick = ()=>{ pv.classList.remove('show'); render(); };
+document.getElementById('pv-prev').onclick = ()=>{ if(pvIdx>0){pvIdx--; showPv();} };
+document.getElementById('pv-next').onclick = ()=>{ if(pvIdx<pvList.length-1){pvIdx++; showPv();} };
+document.getElementById('pv-botsu').onclick = ()=>{
+  const id = pvList[pvIdx];
+  if(state.tab==='keep'){
+    state.order = state.order.filter(x=>x!==id);
+    state.botsu.push(id);
+  }else{
+    state.botsu = state.botsu.filter(x=>x!==id);
+    state.order.push(id);
+  }
+  saveMeta();
+  pvList = currentList();
+  if(pvIdx >= pvList.length) pvIdx = pvList.length-1;
+  if(pvList.length===0){ pv.classList.remove('show'); render(); return; }
+  showPv();
+};
+// swipe
+let swipeX=null;
+pv.addEventListener('pointerdown', e=>{ swipeX=e.clientX; });
+pv.addEventListener('pointerup', e=>{
+  if(swipeX===null) return;
+  const dx = e.clientX - swipeX; swipeX=null;
+  if(dx < -50 && pvIdx<pvList.length-1){ pvIdx++; showPv(); }
+  else if(dx > 50 && pvIdx>0){ pvIdx--; showPv(); }
+});
+
+/* ================= export ================= */
+document.getElementById('btn-export').onclick = ()=>{
+  if(!state.order.length && !state.botsu.length){ toast('画像がありません'); return; }
+  const data = {
+    version: 1,
+    created: new Date().toISOString(),
+    order: state.order.map(id=>state.images.get(id).name),
+    botsu: state.botsu.map(id=>state.images.get(id).name),
+  };
+  download(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}), 'order.json');
+  toast('order.json を出力しました');
+};
+
+document.getElementById('btn-zip').onclick = async ()=>{
+  if(!state.order.length){ toast('採用画像がありません'); return; }
+  toast('ZIP作成中...');
+  const zip = new JSZip();
+  state.order.forEach((id,i)=>{
+    const info = state.images.get(id);
+    const ext = info.name.split('.').pop() || 'png';
+    zip.file(`${String(i+1).padStart(3,'0')}.${ext}`, info.fullBlob);
+  });
+  const blob = await zip.generateAsync({type:'blob'}, meta=>{
+    if(meta.percent % 20 < 1) toast(`ZIP作成中... ${Math.round(meta.percent)}%`);
+  });
+  download(blob, 'storyline_export.zip');
+  toast('ZIP出力完了');
+};
+
+function download(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+}
+
+/* ================= misc ================= */
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+// long-press "全削除" hidden: triple-tap title to reset project
+let titleTaps=0, titleTimer;
+document.querySelector('h1').addEventListener('click', ()=>{
+  titleTaps++;
+  clearTimeout(titleTimer);
+  titleTimer = setTimeout(()=>titleTaps=0, 600);
+  if(titleTaps>=3){
+    titleTaps=0;
+    if(confirm('プロジェクトを全削除してリセットしますか?')){
+      indexedDB.deleteDatabase('storyline-sorter');
+      location.reload();
+    }
+  }
+});
+
+/* ================= service worker ================= */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW register failed', err));
+  });
+}
+
+init();
+</script>
+</body>
+</html>
