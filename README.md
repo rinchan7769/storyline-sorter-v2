@@ -11,6 +11,8 @@ AIイラスト集の**画像選別・構成**を行うツール。スマホで�
 | `sw.js` | Service Worker(オフライン動作) |
 | `icon-192.png` / `icon-512.png` / `icon-512-maskable.png` | アイコン |
 | `apply_order.py` | PC側で order.json を適用するスクリプト(このフォルダに同梱しなくても可) |
+| `fetch_pixiv_trends.py` | pixiv トレンド収集ツール(CLI) — 下記参照 |
+| `web_app.py` / `web/index.html` | 同ツールをブラウザから操作するためのローカル Web UI |
 
 ## GitHub Pages へのデプロイ手順
 
@@ -71,6 +73,9 @@ git push -u origin main
 pip install -r requirements.txt   # requests / beautifulsoup4 / pandas
 ```
 
+ブラウザで操作したい場合は「[ブラウザで使う](#ブラウザで使う-web_apppy)」へ。
+以下はコマンドラインでの使い方。
+
 ## 使い方
 
 ```bash
@@ -114,13 +119,47 @@ python fetch_pixiv_trends.py -o out.csv -v          # 出力先変更 + 詳細�
   残りのタグの処理は続行する。通信エラーは指数バックオフで再試行する。
 - 取得データの利用は pixiv の利用規約の範囲内で。
 
+## ブラウザで使う (`web_app.py`)
+
+コマンドライン操作なしで使いたい場合はこちら。
+
+```bash
+python web_app.py          # → http://127.0.0.1:8765 が自動で開く
+```
+
+ブラウザ上で **取得設定 → 実行 → 進捗ログ → 表とグラフ → CSV ダウンロード** まで完結する。
+
+| できること | 説明 |
+|---|---|
+| 取得設定 | タグ数の上限・リクエスト間隔・ランキング利用の有無、タグの直接指定 |
+| 進捗表示 | 何タグ目を取得中かのバーと、スキップ理由を含むライブログ |
+| 中止 | 実行中のジョブを途中で止める(そこまでの結果は残る) |
+| 一覧表 | タグごとの合計 / 最新日 / 増減率 / 日数 + 行内スパークライン、列ソート対応 |
+| 比較グラフ | 選んだタグ(最大 8 件)の推移を重ねて表示。ホバーで十字線とツールチップ |
+| CSV | その場でダウンロード。既存の CSV を読み込んで表示だけすることも可能 |
+
+起動オプション: `--port` / `--host` / `--no-browser` / `-v`。
+
+### なぜローカルサーバが必要か
+
+`dic.pixiv.net` は CORS ヘッダ (`Access-Control-Allow-Origin`) を返さないため、
+**ブラウザの JavaScript から直接スクレイピングすることはできない**
+(GitHub Pages に置いた静的ページからは必ずブロックされる)。
+そのため「取得は Python 側、操作と表示はブラウザ側」という構成にしている。
+
+なお `web_app.py` は標準ライブラリの `http.server` を使っているので、
+**追加の pip install は不要**(`requirements.txt` の 3 つだけで動く)。
+既定では `127.0.0.1` のみで待ち受け、スクレイピング先 URL はサーバ側の起動オプションでのみ
+決まる(ブラウザから書き換えられない)。
+
 ## テスト
 
 ```bash
-python test_fetch_pixiv_trends.py
+python test_fetch_pixiv_trends.py   # スクレイパ本体 (23 ケース)
+python test_web_app.py              # ブラウザ UI のサーバ側 API (9 ケース)
 ```
 
-pixiv には接続せず、ローカルのモック HTTP サーバ相手に
+いずれも pixiv には接続せず、ローカルのモック HTTP サーバ相手に
 「タグ抽出 → グラフ抽出 → CSV 出力」を通しで検証する(404・グラフ無しのスキップ動作を含む)。
 
 > **補足**: 百科事典側の HTML 構造が変わってグラフが読めなくなった場合は、
