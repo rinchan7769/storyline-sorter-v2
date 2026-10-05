@@ -39,3 +39,31 @@ DBは初回アクセス時に `data/budget.db` を自動作成し、カテゴリ
 ## 制限事項
 - スキャン画像のみのPDF(OCR)は未対応。カード会社ごとの明細レイアウト差は確認画面での修正が前提です。
 - 認証なし・単一ユーザー前提(ローカル運用)。
+
+## 外出先・iPhoneで使う(デプロイ)
+認証は単一パスワード(HMAC署名Cookie、30日有効、同一IP 5回失敗で15分ロック)。
+`NODE_ENV=production` で `APP_PASSWORD` が未設定の場合は **全アクセスを拒否(503)** します。
+
+### 方法A: Docker + Tailscale(おすすめ・公開しない)
+自宅PC/ミニPC/VPSでアプリを動かし、Tailscale(無料)で自分の端末同士だけをつなぎます。インターネットには公開されません。
+```bash
+cd budget-app
+export APP_PASSWORD='長めのパスワード' AUTH_SECRET=$(openssl rand -hex 32)
+COOKIE_SECURE=false docker compose up -d --build   # http(Tailscale内)で使うため
+```
+サーバーとiPhoneにTailscaleを入れ、iPhoneのSafariで `http://<サーバーのTailscale名>:3000` を開きます。
+`tailscale serve --bg 3000` を使えば `https://…ts.net` になり、その場合は `COOKIE_SECURE` の指定は不要です。
+
+### 方法B: VPS + HTTPS で公開
+CaddyなどでHTTPS化し、`localhost:3000` にリバースプロキシします(`COOKIE_SECURE` は既定の true のまま)。
+```
+budget.example.com {
+  reverse_proxy localhost:3000
+}
+```
+必ず強いパスワードを設定してください。DBは Docker ボリューム `budget-data`(`/data/budget.db`)に保存されるので、定期的にバックアップしてください。
+(SQLiteファイルを使うため、Vercel等のサーバーレス環境には置けません。)
+
+### iPhoneのホーム画面に追加
+SafariでURLを開く → 共有ボタン → 「ホーム画面に追加」。アプリのように全画面で起動します。
+レシート撮影は 取り込み画面 → レシートのドロップ枠をタップ → 「写真を撮る」で行えます。

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, List, Upload, Settings, Moon, Sun, Wallet } from "lucide-react";
+import { LayoutDashboard, List, Upload, Settings, Moon, Sun, Wallet, LogOut } from "lucide-react";
 import { cx } from "@/lib/format";
 
 const items = [
@@ -18,8 +18,9 @@ export function Nav() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  if (path === "/login") return null;
   return (
-    <header className="sticky top-0 z-40 border-b bg-card/90 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b bg-card/90 pt-[env(safe-area-inset-top)] backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2">
         <Link href="/dashboard" className="mr-4 flex items-center gap-2 font-bold">
           <Wallet className="h-5 w-5 text-primary" /> 家計簿
@@ -45,6 +46,13 @@ export function Nav() {
           className="rounded-lg p-2 hover:bg-muted"
         >
           {mounted && resolvedTheme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+        </button>
+        <button
+          aria-label="ログアウト"
+          onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login"; }}
+          className="rounded-lg p-2 hover:bg-muted"
+        >
+          <LogOut className="h-5 w-5" />
         </button>
       </div>
     </header>

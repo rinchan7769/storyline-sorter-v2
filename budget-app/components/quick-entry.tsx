@@ -85,7 +85,7 @@ export function QuickEntry({ cats, onSaved }: { cats: Category[]; onSaved: () =>
         <div className="min-w-48 flex-1"><Label>メモ</Label><Input value={memo} onChange={(e) => setMemo(e.target.value)} /></div>
         <Button type="submit" disabled={busy}><Plus className="h-4 w-4" />追加</Button>
       </div>
-      <p className="text-xs text-muted-foreground">ショートカット: <kbd>n</kbd> 金額へ移動 ・ <kbd>Ctrl/⌘ + Enter</kbd> 保存 ・ <kbd>/</kbd> 検索</p>
+      <p className="hidden text-xs text-muted-foreground md:block">ショートカット: <kbd>n</kbd> 金額へ移動 ・ <kbd>Ctrl/⌘ + Enter</kbd> 保存 ・ <kbd>/</kbd> 検索</p>
       <ErrorNote>{err}</ErrorNote>
     </form>
   );

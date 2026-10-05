@@ -99,7 +99,30 @@ export function TransactionsClient() {
         <span>合計 <b className="text-foreground">{yen(data?.total ?? 0)}</b></span>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
+      <ul className="space-y-2 md:hidden">
+        {data?.rows.map((r) => (
+          <li key={r.id} className="rounded-xl border bg-card p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <Cell value={r.merchant} onSave={(v) => patch(r.id, { merchant: v })} />
+                <Cell value={r.date} type="date" onSave={(v) => v && patch(r.id, { date: v })} />
+              </div>
+              <div className="w-28 shrink-0">
+                <Cell value={String(r.amount)} align="right" display={yen(r.amount)} onSave={(v) => { const n = Number(v.replace(/[,，]/g, "")); if (Number.isInteger(n) && n > 0) patch(r.id, { amount: n }); else setErr("金額は1円以上の整数で入力してください"); }} />
+              </div>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: r.color ?? "var(--border)" }} />
+              <Select className="py-1.5" value={r.categoryId ?? ""} onChange={(e) => patch(r.id, { categoryId: e.target.value ? Number(e.target.value) : null })}><CategoryOptions cats={cats} /></Select>
+              <Button variant="ghost" aria-label="削除" onClick={() => remove(r.id)}><Trash2 className="h-4 w-4 text-danger" /></Button>
+            </div>
+            <p className="mt-1 px-2 text-xs text-muted-foreground">{r.paymentMethod}{r.memo && ` ・ ${r.memo}`}</p>
+          </li>
+        ))}
+        {data && data.rows.length === 0 && <li className="p-8 text-center text-sm text-muted-foreground">該当する明細がありません</li>}
+      </ul>
+
+      <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
         <table className="w-full min-w-[820px] text-sm">
           <thead className="bg-muted text-left text-xs text-muted-foreground">
             <tr><th className="p-2">日付</th><th className="p-2">店舗・内容</th><th className="p-2">カテゴリ</th><th className="p-2">支払元</th><th className="p-2">メモ</th><th className="p-2 text-right">金額</th><th className="w-10" /></tr>
