@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import socket
 import threading
 import time
 import webbrowser
@@ -436,6 +437,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--host", default="127.0.0.1",
                         help="待ち受けアドレス(既定は自分の PC からのみ)")
+    parser.add_argument("--lan", action="store_true",
+                        help="同じ Wi-Fi の他の端末(スマホなど)からも開けるようにする")
     parser.add_argument("--port", type=int, default=8765, help="待ち受けポート")
     parser.add_argument("--no-browser", action="store_true", help="ブラウザを自動で開かない")
     parser.add_argument("--dic-base", default=ft.DEFAULT_DIC_BASE,
@@ -448,12 +451,26 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def local_ip() -> str | None:
+    """この PC が LAN で使っているアドレスを調べる(実際の通信は発生しない)。"""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 9))   # TEST-NET-1。到達性は不要
+        address = probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+    return None if address.startswith("127.") else address
+
+
 def create_server(args: argparse.Namespace) -> ThreadingHTTPServer:
     handler = type("BoundAppHandler", (AppHandler,), {
         "runner": JobRunner(args.dic_base.rstrip("/"), args.ranking_url),
         "min_sleep": float(args.min_sleep),
     })
-    server = ThreadingHTTPServer((args.host, args.port), handler)
+    host = "0.0.0.0" if getattr(args, "lan", False) else args.host
+    server = ThreadingHTTPServer((host, args.port), handler)
     server.daemon_threads = True
     return server
 
@@ -468,10 +485,20 @@ def main(argv: list[str] | None = None) -> int:
 
     server = create_server(args)
     host, port = server.server_address[:2]
-    display_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
-    url = f"http://{display_host}:{port}/"
+    shared = host in ("0.0.0.0", "::")
+    url = f"http://{'127.0.0.1' if shared else host}:{port}/"
 
-    print(f"\n  ピクシブ百科事典 トレンド収集ツール\n  → {url}\n  (終了するには Ctrl+C)\n")
+    lines = ["", "  ピクシブ百科事典 トレンド収集ツール", f"  → {url}"]
+    if shared:
+        address = local_ip()
+        if address:
+            lines.append(f"  → http://{address}:{port}/  ← スマホなど同じ Wi-Fi の端末から")
+        else:
+            lines.append("  → この PC の LAN アドレスは自動判別できませんでした")
+        lines.append("  ※ 同じネットワークの誰でも開けます。公共の Wi-Fi では使わないでください")
+    lines += ["  (終了するには Ctrl+C)", ""]
+    print("\n".join(lines))
+
     if not args.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
 

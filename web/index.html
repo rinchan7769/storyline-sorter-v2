@@ -2,8 +2,12 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0f0f12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="pixivトレンド">
+<meta name="format-detection" content="telephone=no">
 <title>pixiv トレンド収集</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f0f12'/%3E%3Cpath d='M5 22l7-8 5 5 4-6 6 7' stroke='%238b3dff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
@@ -38,6 +42,10 @@ header{
   padding:12px 16px; background:linear-gradient(180deg,#17171c,#131318);
   border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20;
   display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  /* iPhone のノッチ/ホームバー回避 */
+  padding-top:max(12px, env(safe-area-inset-top));
+  padding-left:max(16px, env(safe-area-inset-left));
+  padding-right:max(16px, env(safe-area-inset-right));
 }
 .pill{
   margin-left:auto; font-size:11px; font-weight:700; padding:4px 10px; border-radius:999px;
@@ -153,10 +161,18 @@ tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--purple)}
 }
 [hidden]{display:none !important}
 @media (max-width:560px){
-  main{padding:12px}
+  main{padding:12px;
+       padding-left:max(12px, env(safe-area-inset-left));
+       padding-right:max(12px, env(safe-area-inset-right));
+       padding-bottom:max(12px, env(safe-area-inset-bottom))}
   .card{padding:12px 13px}
   .table-scroll{margin:0 -13px; padding:0 13px}
   .stat .v{font-size:19px}
+  /* iOS Safari は font-size 16px 未満の入力欄でズームするので、それを避ける */
+  input[type=number], input[type=text], textarea{font-size:16px}
+  button, .toolbar label{min-height:40px}   /* タップしやすい大きさに */
+  #tbody input[type=checkbox]{width:20px; height:20px}
+  th,td{padding:10px}
 }
 </style>
 </head>
@@ -923,9 +939,13 @@ for (const th of document.querySelectorAll("th.sortable")) {
 const chart = $("chart");
 chart.addEventListener("mousemove", onChartMove);
 chart.addEventListener("mouseleave", onChartLeave);
+// タッチでは指を離してもツールチップを残す(離した瞬間に消えると読めないため)。
+// 消すのはグラフの外をタップしたとき。
 chart.addEventListener("touchstart", (e) => onChartMove(e.touches[0]), {passive: true});
 chart.addEventListener("touchmove", (e) => onChartMove(e.touches[0]), {passive: true});
-chart.addEventListener("touchend", onChartLeave);
+document.addEventListener("touchstart", (e) => {
+  if (!e.target.closest || !e.target.closest(".chart-wrap")) onChartLeave();
+}, {passive: true});
 
 let resizeTimer = null;
 window.addEventListener("resize", () => {

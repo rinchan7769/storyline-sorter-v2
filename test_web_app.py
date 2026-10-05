@@ -178,5 +178,36 @@ class ParamsTestCase(unittest.TestCase):
         self.assertNotIn("ranking_url", params)
 
 
+class LanOptionTestCase(unittest.TestCase):
+    """--lan を付けたときだけ他の端末から見えるようになること。"""
+
+    def _serve(self, **overrides) -> tuple[str, int]:
+        args = argparse.Namespace(
+            host="127.0.0.1", port=0, lan=False,
+            dic_base="http://127.0.0.1:1", ranking_url="http://127.0.0.1:1/r",
+            min_sleep=2.0,
+        )
+        for key, value in overrides.items():
+            setattr(args, key, value)
+        server = web_app.create_server(args)
+        try:
+            return server.server_address[0], server.server_address[1]
+        finally:
+            server.server_close()
+
+    def test_default_is_loopback_only(self) -> None:
+        host, _port = self._serve()
+        self.assertEqual(host, "127.0.0.1")
+
+    def test_lan_binds_all_interfaces(self) -> None:
+        host, _port = self._serve(lan=True)
+        self.assertEqual(host, "0.0.0.0")
+
+    def test_local_ip_is_not_loopback(self) -> None:
+        address = web_app.local_ip()
+        if address is not None:   # ネットワークの無い環境では None
+            self.assertFalse(address.startswith("127."), address)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
