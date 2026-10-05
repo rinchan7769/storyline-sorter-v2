@@ -9,6 +9,7 @@ FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 DATABASE_PATH=/data/budget.db
 COPY --from=build /app ./
+RUN mkdir -p /data && chown node:node /data
 VOLUME /data
 EXPOSE 3000
 USER node
