@@ -1,0 +1,16 @@
+services:
+  budget:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD:?APP_PASSWORD を設定してください}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET を設定してください}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # HTTPSなしで(例: Tailscale/LAN経由のhttp)使う場合のみ false
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    volumes:
+      - budget-data:/data
+volumes:
+  budget-data:
