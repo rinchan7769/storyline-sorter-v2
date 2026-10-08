@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="pixivトレンド">
+<meta name="format-detection" content="telephone=no">
+<title>pixiv トレンド収集</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f0f12'/%3E%3Cpath d='M5 22l7-8 5 5 4-6 6 7' stroke='%238b3dff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  /* --- アプリのUI色(Storyline Sorter と揃える) --- */
+  --bg:#0f0f12; --panel:#17171c; --panel2:#1e1e25;
+  --purple:#8b3dff; --mint:#00c49f; --red:#ff4d6d; --amber:#eda100;
+  --text:#e8e6f0; --dim:#8a8794; --line:#2a2a33;
+
+  /* --- グラフ用(検証済みパレット / dark) --- */
+  --surface:#17171c;
+  --grid:#26262e; --axis:#35353f;
+  --spark:#3987e5;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+  --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{min-height:100%}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',system-ui,sans-serif;
+  font-size:14px; line-height:1.6;
+}
+h1{font-size:15px; font-weight:800; letter-spacing:.06em}
+h1 .accent{color:var(--purple)}
+h2{font-size:13px; font-weight:800; letter-spacing:.04em; color:var(--text)}
+.muted{color:var(--dim)}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* ===== header ===== */
+header{
+  padding:12px 16px; background:linear-gradient(180deg,#17171c,#131318);
+  border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  /* iPhone のノッチ/ホームバー回避 */
+  padding-top:max(12px, env(safe-area-inset-top));
+  padding-left:max(16px, env(safe-area-inset-left));
+  padding-right:max(16px, env(safe-area-inset-right));
+}
+.pill{
+  margin-left:auto; font-size:11px; font-weight:700; padding:4px 10px; border-radius:999px;
+  background:var(--panel2); color:var(--dim); border:1px solid var(--line); white-space:nowrap;
+}
+.pill.running{background:rgba(139,61,255,.16); color:#c4a2ff; border-color:var(--purple)}
+.pill.done{background:rgba(0,196,159,.14); color:var(--mint); border-color:var(--mint)}
+.pill.error{background:rgba(255,77,109,.14); color:var(--red); border-color:var(--red)}
+
+/* ===== layout ===== */
+/* minmax(0,1fr) にしないと、grid アイテムが min-content 幅まで広がって横スクロールが出る */
+main{max-width:1080px; margin:0 auto; padding:16px; display:grid;
+     grid-template-columns:minmax(0,1fr); gap:14px}
+.card{
+  background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+  min-width:0;
+}
+.card > h2{margin-bottom:12px}
+.row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; min-width:0}
+.field{display:flex; flex-direction:column; gap:5px; flex:1 1 110px; min-width:0; max-width:190px}
+.field.wide{max-width:none; flex-basis:100%}
+.field label{font-size:11px; font-weight:700; color:var(--dim); letter-spacing:.04em}
+input[type=number], input[type=text], textarea{
+  background:var(--panel2); color:var(--text); border:1px solid var(--line);
+  border-radius:8px; padding:8px 10px; font:inherit; font-variant-numeric:tabular-nums;
+}
+input:focus, textarea:focus{outline:2px solid var(--purple); outline-offset:-1px}
+textarea{width:100%; min-height:64px; resize:vertical; line-height:1.5}
+.check{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--text); cursor:pointer}
+.check input{accent-color:var(--purple); width:15px; height:15px}
+
+button{
+  font:inherit; font-weight:700; border-radius:9px; padding:9px 16px; cursor:pointer;
+  border:1px solid var(--line); background:var(--panel2); color:var(--text);
+}
+button:hover:not(:disabled){border-color:#3a3a46}
+button:disabled{opacity:.4; cursor:not-allowed}
+button.primary{background:var(--purple); border-color:var(--purple); color:#fff}
+button.danger{background:transparent; border-color:var(--red); color:var(--red)}
+button.small{padding:6px 12px; font-size:12px}
+
+.hint{font-size:11px; color:var(--dim); margin-top:8px; line-height:1.7}
+
+/* ===== progress ===== */
+.bar{height:6px; border-radius:999px; background:var(--panel2); overflow:hidden; margin:2px 0 10px}
+.bar > i{display:block; height:100%; width:0; background:var(--purple); transition:width .3s ease}
+.bar.done > i{background:var(--mint)}
+#log{
+  background:#101014; border:1px solid var(--line); border-radius:9px; padding:10px 12px;
+  max-height:220px; overflow-y:auto; font-size:11.5px; line-height:1.75;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:pre-wrap;
+  word-break:break-word;
+}
+#log .lv-WARNING{color:var(--amber)}
+#log .lv-ERROR{color:var(--red)}
+#log .lv-INFO{color:var(--dim)}
+#log .lv-INFO b{color:var(--text); font-weight:400}
+
+/* ===== stat tiles ===== */
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:14px}
+.stat{background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:10px 12px}
+.stat .k{font-size:10.5px; font-weight:700; color:var(--dim); letter-spacing:.05em}
+.stat .v{font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; margin-top:2px;
+         white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.stat .v small{font-size:12px; font-weight:700; color:var(--dim); margin-left:2px}
+
+/* ===== chart ===== */
+.chart-wrap{position:relative; margin-bottom:6px}
+#chart{display:block; width:100%; touch-action:pan-y}
+#tooltip{
+  position:absolute; pointer-events:none; opacity:0; transition:opacity .12s;
+  background:#101014ee; border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+  font-size:11.5px; line-height:1.65; white-space:nowrap; z-index:5;
+  box-shadow:0 6px 18px #0008;
+}
+#tooltip .tt-date{color:var(--dim); font-weight:700; margin-bottom:3px}
+#tooltip .tt-row{display:flex; align-items:center; gap:6px; font-variant-numeric:tabular-nums}
+#tooltip .swatch{width:9px; height:9px; border-radius:2px; flex:none}
+#tooltip .tt-val{margin-left:auto; font-weight:700}
+.legend{display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:4px}
+.legend button{
+  display:flex; align-items:center; gap:6px; background:none; border:none; padding:2px 0;
+  font-size:11.5px; font-weight:600; color:var(--text);
+}
+.legend .swatch{width:10px; height:10px; border-radius:3px; flex:none}
+.legend button.off{opacity:.35}
+
+/* ===== table ===== */
+.table-scroll{overflow-x:auto; margin:0 -16px; padding:0 16px}
+table{border-collapse:collapse; width:100%; font-size:12.5px}
+th,td{padding:8px 10px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap}
+th{
+  font-size:10.5px; font-weight:700; color:var(--dim); letter-spacing:.05em;
+  position:sticky; top:0; background:var(--panel); cursor:pointer; user-select:none;
+}
+th.sortable:hover{color:var(--text)}
+th .arrow{opacity:.45; font-size:9px; margin-left:3px}
+td.num{text-align:right; font-variant-numeric:tabular-nums}
+tbody tr:hover{background:#ffffff07}
+tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--purple)}
+.tag-cell{max-width:220px; overflow:hidden; text-overflow:ellipsis}
+.tag-cell a{color:var(--text); text-decoration:none; border-bottom:1px dotted var(--line)}
+.tag-cell a:hover{color:var(--purple); border-color:var(--purple)}
+.delta.up{color:var(--mint)} .delta.down{color:var(--red)} .delta.flat{color:var(--dim)}
+.spark{display:block}
+
+.empty{text-align:center; color:var(--dim); font-size:12.5px; padding:26px 10px}
+.toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px}
+.toolbar .spacer{flex:1}
+.note{
+  font-size:11.5px; color:var(--dim); background:var(--panel2); border:1px solid var(--line);
+  border-left:3px solid var(--purple); border-radius:7px; padding:9px 11px; margin-bottom:12px;
+}
+[hidden]{display:none !important}
+@media (max-width:560px){
+  main{padding:12px;
+       padding-left:max(12px, env(safe-area-inset-left));
+       padding-right:max(12px, env(safe-area-inset-right));
+       padding-bottom:max(12px, env(safe-area-inset-bottom))}
+  .card{padding:12px 13px}
+  .table-scroll{margin:0 -13px; padding:0 13px}
+  .stat .v{font-size:19px}
+  /* iOS Safari は font-size 16px 未満の入力欄でズームするので、それを避ける */
+  input[type=number], input[type=text], textarea{font-size:16px}
+  button, .toolbar label{min-height:40px}   /* タップしやすい大きさに */
+  #tbody input[type=checkbox]{width:20px; height:20px}
+  th,td{padding:10px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>pixiv <span class="accent">トレンド</span> 収集</h1>
+  <span class="muted" style="font-size:11px">ピクシブ百科事典の閲覧推移をまとめて取得</span>
+  <span class="pill" id="pill">待機中</span>
+</header>
+
+<main>
+
+  <!-- ===== 取得設定 ===== -->
+  <section class="card">
+    <h2>取得設定</h2>
+    <div class="row">
+      <div class="field">
+        <label for="limit">タグ数の上限</label>
+        <input type="number" id="limit" value="20" min="1" max="200" step="1">
+      </div>
+      <div class="field">
+        <label for="sleep">リクエスト間隔(秒)</label>
+        <input type="number" id="sleep" value="2" min="2" max="60" step="0.5">
+      </div>
+      <div class="field">
+        <label for="rankingPages">ランキング読込ページ数</label>
+        <input type="number" id="rankingPages" value="1" min="1" max="10" step="1">
+      </div>
+      <label class="check" style="padding-bottom:9px">
+        <input type="checkbox" id="useRanking" checked>
+        pixiv デイリーランキングも使う
+      </label>
+    </div>
+
+    <div class="field wide" style="margin-top:12px">
+      <label for="tags">タグを直接指定する場合(1行1タグ / 空欄ならトレンドを自動抽出)</label>
+      <textarea id="tags" placeholder="初音ミク&#10;ずんだもん"></textarea>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="runBtn">取得を開始</button>
+      <button class="danger" id="cancelBtn" disabled>中止</button>
+    </div>
+
+    <p class="hint">
+      サーバ負荷軽減のため、pixiv へのアクセスは最低 2 秒間隔で行われます。
+      20 タグなら 1 分弱かかります。取得中もこのページを開いたままにしてください。
+    </p>
+  </section>
+
+  <!-- ===== 進捗 ===== -->
+  <section class="card" id="progressCard" hidden>
+    <h2>進捗 <span class="muted tnum" id="progressText" style="font-weight:400"></span></h2>
+    <div class="bar" id="bar"><i></i></div>
+    <div id="log"></div>
+  </section>
+
+  <!-- ===== 結果 ===== -->
+  <section class="card">
+    <h2>結果</h2>
+
+    <div class="stats" id="stats" hidden>
+      <div class="stat"><div class="k">タグ数</div><div class="v tnum" id="stTags">0</div></div>
+      <div class="stat"><div class="k">データ行数</div><div class="v tnum" id="stRows">0</div></div>
+      <div class="stat"><div class="k">期間</div><div class="v" id="stRange" style="font-size:13px">—</div></div>
+      <div class="stat"><div class="k">合計閲覧数</div><div class="v tnum" id="stViews">0</div></div>
+    </div>
+
+    <div class="toolbar">
+      <button class="small" id="csvBtn" disabled>CSV をダウンロード</button>
+      <label class="small" for="csvFile"
+             style="display:inline-block; border:1px solid var(--line); background:var(--panel2);
+                    border-radius:9px; padding:6px 12px; font-size:12px; font-weight:700; cursor:pointer">
+        CSV を読み込む
+      </label>
+      <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+      <div class="spacer"></div>
+      <button class="small" id="selTop">上位5件を選択</button>
+      <button class="small" id="selNone">選択を解除</button>
+    </div>
+
+    <div id="resultBody" hidden>
+      <div class="note" id="capNote" hidden>
+        グラフに重ねられるのは 8 タグまでです。9 件目を選ぶ前にどれかを外してください。
+      </div>
+
+      <div class="chart-wrap">
+        <svg id="chart" role="img" aria-label="タグ別の日別閲覧数推移"></svg>
+        <div id="tooltip"></div>
+      </div>
+      <div class="legend" id="legend"></div>
+
+      <div class="table-scroll" style="margin-top:16px">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:34px"></th>
+              <th class="sortable" data-sort="tag">タグ<span class="arrow"></span></th>
+              <th style="width:96px">推移</th>
+              <th class="sortable num" data-sort="total" style="text-align:right">合計<span class="arrow"></span></th>
+              <th class="sortable num" data-sort="last" style="text-align:right">最新日<span class="arrow"></span></th>
+              <th class="sortable num" data-sort="delta" style="text-align:right">増減<span class="arrow"></span></th>
+              <th class="sortable num" data-sort="days" style="text-align:right">日数<span class="arrow"></span></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="empty" id="emptyState">
+      まだデータがありません。「取得を開始」するか、既存の CSV を読み込んでください。
+    </div>
+  </section>
+
+</main>
+
+<script>
+"use strict";
+
+// ============================ 共通ユーティリティ ============================
+
+const $ = (id) => document.getElementById(id);
+const NF = new Intl.NumberFormat("ja-JP");
+const fmt = (n) => NF.format(n);
+const SERIES_COLORS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"]
+  .map((name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim());
+const MAX_SERIES = SERIES_COLORS.length;
+
+/** 状態 */
+const state = {
+  series: [],            // [{tag, url, points:[[date,views],...], total, last, delta, days}]
+  selected: new Set(),   // 選択中のタグ
+  colorOf: new Map(),    // タグ → 色スロット番号(選択中は固定)
+  hidden: new Set(),     // 凡例で非表示にしたタグ
+  sortKey: "total",
+  sortAsc: false,
+  polling: null,
+  logSeq: 0,
+  fromFile: false,
+  userPickedSelection: false,  // true になると自動の上位5件選択をやめる
+};
+
+function setPill(text, cls) {
+  const pill = $("pill");
+  pill.textContent = text;
+  pill.className = "pill" + (cls ? " " + cls : "");
+}
+
+// ============================ 取得ジョブの操作 ============================
+
+async function postJSON(url, body) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body || {}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  return payload;
+}
+
+async function startRun() {
+  const params = {
+    limit: Number($("limit").value) || 20,
+    sleep: Number($("sleep").value) || 2,
+    ranking_pages: Number($("rankingPages").value) || 1,
+    use_ranking: $("useRanking").checked,
+    tags: $("tags").value.trim() ? [$("tags").value] : [],
+  };
+  try {
+    await postJSON("/api/run", params);
+  } catch (err) {
+    appendLog([{seq: ++state.logSeq, level: "ERROR", message: String(err.message || err)}]);
+    $("progressCard").hidden = false;
+    return;
+  }
+  state.logSeq = 0;
+  state.fromFile = false;
+  $("log").textContent = "";
+  $("progressCard").hidden = false;
+  $("runBtn").disabled = true;
+  $("cancelBtn").disabled = false;
+  setPill("取得中…", "running");
+  poll();
+  state.polling = setInterval(poll, 900);
+}
+
+async function cancelRun() {
+  $("cancelBtn").disabled = true;
+  try { await postJSON("/api/cancel", {}); } catch (_) { /* 表示は次のpollで更新される */ }
+}
+
+async function poll() {
+  let status;
+  try {
+    const response = await fetch(`/api/status?since=${state.logSeq}`);
+    status = await response.json();
+  } catch (_) {
+    return; // サーバ停止中などは次回リトライ
+  }
+
+  if (status.logs && status.logs.length) {
+    appendLog(status.logs);
+    state.logSeq = status.log_seq;
+  }
+
+  const total = status.total || 0;
+  const done = status.done || 0;
+  $("progressText").textContent = total
+    ? `${done} / ${total} タグ${status.current ? ` — ${status.current}` : ""}（${status.elapsed}秒）`
+    : "タグを収集中…";
+  const bar = $("bar");
+  bar.querySelector("i").style.width = total ? `${(done / total) * 100}%` : "8%";
+
+  if (status.row_count !== undefined && status.row_count !== lastRowCount) {
+    lastRowCount = status.row_count;
+    if (status.row_count > 0) loadResult();
+  }
+
+  if (status.state && status.state !== "running") {
+    clearInterval(state.polling);
+    state.polling = null;
+    $("runBtn").disabled = false;
+    $("cancelBtn").disabled = true;
+    bar.classList.add("done");
+    bar.querySelector("i").style.width = "100%";
+    if (status.state === "error") setPill("エラー", "error");
+    else if (status.state === "cancelled") setPill("中止しました", "");
+    else setPill(`完了（${status.ok_count} タグ）`, "done");
+    loadResult();
+  }
+}
+let lastRowCount = -1;
+
+function appendLog(entries) {
+  const log = $("log");
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  for (const entry of entries) {
+    const line = document.createElement("div");
+    line.className = "lv-" + entry.level;
+    line.textContent = entry.message;
+    log.appendChild(line);
+  }
+  while (log.childElementCount > 500) log.removeChild(log.firstChild);
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+async function loadResult() {
+  try {
+    const response = await fetch("/api/result");
+    const payload = await response.json();
+    setSeries(payload.series || [], false);
+  } catch (_) { /* 取得中の一時的な失敗は無視 */ }
+}
+
+// ============================ データの整形 ============================
+
+function setSeries(rawSeries, fromFile) {
+  state.fromFile = fromFile;
+  state.series = rawSeries.map((item) => {
+    const points = item.points.slice().sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    const values = points.map((point) => point[1]);
+    const first = values[0] ?? 0;
+    const last = values[values.length - 1] ?? 0;
+    return {
+      tag: item.tag,
+      url: item.url || "",
+      points,
+      total: values.reduce((sum, value) => sum + value, 0),
+      last,
+      delta: first > 0 ? (last - first) / first : null,
+      days: points.length,
+    };
+  });
+
+  if (state.userPickedSelection) {
+    // ユーザが選んだ内容は尊重し、消えたタグの色スロットだけ解放する
+    for (const tag of Array.from(state.selected)) {
+      if (!state.series.some((item) => item.tag === tag)) releaseTag(tag);
+    }
+  } else {
+    // 自動選択(上位5件)。取得中は結果が増えるたびに入れ替わるが、
+    // 残ったタグの色は変えない(色はランクではなくタグに紐づく)。
+    const want = new Set(topTags(5));
+    for (const tag of Array.from(state.selected)) {
+      if (!want.has(tag)) releaseTag(tag);
+    }
+    for (const tag of want) claimTag(tag);
+  }
+
+  $("csvBtn").disabled = fromFile || state.series.length === 0;
+  render();
+}
+
+/** 色は「タグ」に紐づけ、他のタグを外しても残ったタグの色は変えない。 */
+function claimTag(tag) {
+  if (state.colorOf.has(tag)) { state.selected.add(tag); return true; }
+  const used = new Set(state.colorOf.values());
+  for (let slot = 0; slot < MAX_SERIES; slot++) {
+    if (!used.has(slot)) {
+      state.colorOf.set(tag, slot);
+      state.selected.add(tag);
+      return true;
+    }
+  }
+  return false; // 8 件を超えた
+}
+
+function releaseTag(tag) {
+  state.selected.delete(tag);
+  state.colorOf.delete(tag);
+  state.hidden.delete(tag);
+}
+
+function topTags(count) {
+  return state.series.slice()
+    .sort((a, b) => b.total - a.total)
+    .slice(0, count)
+    .map((item) => item.tag);
+}
+
+function selectTop(count) {
+  for (const tag of topTags(count)) claimTag(tag);
+}
+
+function colorFor(tag) {
+  const slot = state.colorOf.get(tag);
+  return slot === undefined ? "var(--dim)" : SERIES_COLORS[slot];
+}
+
+// ============================ 描画 ============================
+
+function render() {
+  const hasData = state.series.length > 0;
+  $("resultBody").hidden = !hasData;
+  $("emptyState").hidden = hasData;
+  $("stats").hidden = !hasData;
+  if (!hasData) return;
+
+  const allDates = new Set();
+  let totalViews = 0;
+  for (const item of state.series) {
+    totalViews += item.total;
+    for (const point of item.points) allDates.add(point[0]);
+  }
+  const dates = Array.from(allDates).sort();
+  $("stTags").textContent = fmt(state.series.length);
+  $("stRows").textContent = fmt(state.series.reduce((sum, item) => sum + item.days, 0));
+  $("stRange").textContent = dates.length
+    ? `${dates[0].slice(5)} 〜 ${dates[dates.length - 1].slice(5)}` : "—";
+  $("stViews").textContent = fmt(totalViews);
+  $("capNote").hidden = state.selected.size < MAX_SERIES;
+
+  renderTable();
+  renderLegend();
+  renderChart();
+}
+
+function renderTable() {
+  const rows = state.series.slice().sort((a, b) => {
+    const key = state.sortKey;
+    let diff;
+    if (key === "tag") diff = a.tag.localeCompare(b.tag, "ja");
+    else if (key === "delta") diff = (a.delta ?? -Infinity) - (b.delta ?? -Infinity);
+    else diff = a[key] - b[key];
+    return state.sortAsc ? diff : -diff;
+  });
+
+  const tbody = $("tbody");
+  tbody.textContent = "";
+  for (const item of rows) {
+    const tr = document.createElement("tr");
+    const isSelected = state.selected.has(item.tag);
+    if (isSelected) tr.className = "sel";
+
+    const tdCheck = document.createElement("td");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = isSelected;
+    checkbox.setAttribute("aria-label", `${item.tag} をグラフに表示`);
+    checkbox.style.accentColor = isSelected ? colorFor(item.tag) : "";
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        if (!claimTag(item.tag)) { checkbox.checked = false; $("capNote").hidden = false; return; }
+      } else {
+        releaseTag(item.tag);
+      }
+      state.userPickedSelection = true;
+      render();
+    });
+    tdCheck.appendChild(checkbox);
+
+    const tdTag = document.createElement("td");
+    tdTag.className = "tag-cell";
+    if (item.url) {
+      const link = document.createElement("a");
+      link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer";
+      link.textContent = item.tag;
+      tdTag.appendChild(link);
+    } else {
+      tdTag.textContent = item.tag;
+    }
+
+    const tdSpark = document.createElement("td");
+    tdSpark.appendChild(sparkline(item.points, isSelected ? colorFor(item.tag) : null));
+
+    const tdTotal = cellNum(fmt(item.total));
+    const tdLast = cellNum(fmt(item.last));
+
+    const tdDelta = document.createElement("td");
+    tdDelta.className = "num";
+    if (item.delta === null) {
+      tdDelta.innerHTML = '<span class="delta flat">—</span>';
+    } else {
+      const pct = item.delta * 100;
+      const cls = pct > 0.5 ? "up" : (pct < -0.5 ? "down" : "flat");
+      const mark = cls === "up" ? "▲" : (cls === "down" ? "▼" : "→");
+      const span = document.createElement("span");
+      span.className = "delta " + cls;
+      span.textContent = `${mark} ${Math.abs(pct).toFixed(1)}%`;
+      tdDelta.appendChild(span);
+    }
+
+    tr.append(tdCheck, tdTag, tdSpark, tdTotal, tdLast, tdDelta, cellNum(String(item.days)));
+    tbody.appendChild(tr);
+  }
+
+  for (const th of document.querySelectorAll("th.sortable")) {
+    const arrow = th.querySelector(".arrow");
+    arrow.textContent = th.dataset.sort === state.sortKey ? (state.sortAsc ? "▲" : "▼") : "";
+  }
+}
+
+function cellNum(text) {
+  const td = document.createElement("td");
+  td.className = "num";
+  td.textContent = text;
+  return td;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(name, attrs) {
+  const element = document.createElementNS(SVG_NS, name);
+  for (const [key, value] of Object.entries(attrs || {})) element.setAttribute(key, value);
+  return element;
+}
+
+/** 行内スパークライン(単系列なので色は識別に使わない) */
+function sparkline(points, accent) {
+  const width = 80, height = 22, pad = 2;
+  const svg = svgEl("svg", {class: "spark", width, height, viewBox: `0 0 ${width} ${height}`,
+                            "aria-hidden": "true"});
+  const values = points.map((point) => point[1]);
+  if (values.length < 2) return svg;
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = max - min || 1;
+  const x = (i) => pad + (i * (width - pad * 2)) / (values.length - 1);
+  const y = (v) => height - pad - ((v - min) / span) * (height - pad * 2);
+  const d = values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join("");
+  svg.appendChild(svgEl("path", {d, fill: "none", stroke: accent || "var(--spark)",
+                                 "stroke-width": 1.6, "stroke-linejoin": "round",
+                                 "stroke-linecap": "round", opacity: accent ? 1 : .6}));
+  svg.appendChild(svgEl("circle", {cx: x(values.length - 1), cy: y(values[values.length - 1]),
+                                   r: 2, fill: accent || "var(--spark)"}));
+  return svg;
+}
+
+function renderLegend() {
+  const legend = $("legend");
+  legend.textContent = "";
+  const shown = state.series.filter((item) => state.selected.has(item.tag));
+  if (shown.length < 2) return; // 1 系列なら凡例は不要(タイトル/直接ラベルで足りる)
+  for (const item of shown) {
+    const button = document.createElement("button");
+    button.type = "button";
+    if (state.hidden.has(item.tag)) button.classList.add("off");
+    button.setAttribute("aria-pressed", String(!state.hidden.has(item.tag)));
+    const swatch = document.createElement("span");
+    swatch.className = "swatch";
+    swatch.style.background = colorFor(item.tag);
+    button.append(swatch, document.createTextNode(item.tag));
+    button.addEventListener("click", () => {
+      if (state.hidden.has(item.tag)) state.hidden.delete(item.tag);
+      else state.hidden.add(item.tag);
+      renderLegend(); renderChart();
+    });
+    legend.appendChild(button);
+  }
+}
+
+let chartHit = null; // ホバー判定用のデータ
+
+function renderChart() {
+  const svg = $("chart");
+  svg.textContent = "";
+  chartHit = null;
+
+  const shown = state.series.filter(
+    (item) => state.selected.has(item.tag) && !state.hidden.has(item.tag));
+  const width = Math.max(320, svg.parentElement.clientWidth);
+  const height = Math.max(220, Math.min(340, Math.round(width * 0.42)));
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("height", height);
+
+  if (!shown.length) {
+    svg.appendChild(svgEl("text", {x: width / 2, y: height / 2, "text-anchor": "middle",
+                                   fill: "var(--dim)", "font-size": 12}))
+       .textContent = "表の左端でタグを選ぶとここに推移が表示されます";
+    return;
+  }
+
+  // --- スケール ---
+  const dateSet = new Set();
+  for (const item of shown) for (const point of item.points) dateSet.add(point[0]);
+  const dates = Array.from(dateSet).sort();
+  const indexOf = new Map(dates.map((date, index) => [date, index]));
+  const maxValue = Math.max(...shown.flatMap((item) => item.points.map((point) => point[1])), 1);
+  const niceMax = niceCeil(maxValue);
+
+  const labelSpace = shown.length <= 4 ? 80 : 12;   // 直接ラベルの余白
+  const pad = {top: 14, right: 12 + labelSpace, bottom: 26, left: 52};
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const xAt = (index) => pad.left + (dates.length === 1 ? plotW / 2
+                                     : (index * plotW) / (dates.length - 1));
+  const yAt = (value) => pad.top + plotH - (value / niceMax) * plotH;
+
+  // --- グリッドと軸(控えめに) ---
+  for (let i = 0; i <= 4; i++) {
+    const value = (niceMax / 4) * i;
+    const y = yAt(value);
+    svg.appendChild(svgEl("line", {x1: pad.left, x2: pad.left + plotW, y1: y, y2: y,
+                                   stroke: "var(--grid)", "stroke-width": 1}));
+    const label = svgEl("text", {x: pad.left - 8, y: y + 3.5, "text-anchor": "end",
+                                 fill: "var(--dim)", "font-size": 10});
+    label.textContent = compact(value);
+    svg.appendChild(label);
+  }
+  const tickCount = Math.min(dates.length, Math.max(2, Math.floor(plotW / 78)));
+  for (let i = 0; i < tickCount; i++) {
+    const index = Math.round((i * (dates.length - 1)) / Math.max(1, tickCount - 1));
+    const label = svgEl("text", {x: xAt(index), y: height - 8, "text-anchor":
+                                 i === 0 ? "start" : (i === tickCount - 1 ? "end" : "middle"),
+                                 fill: "var(--dim)", "font-size": 10});
+    label.textContent = dates[index].slice(5).replace("-", "/");
+    svg.appendChild(label);
+  }
+
+  // --- 折れ線 ---
+  for (const item of shown) {
+    const color = colorFor(item.tag);
+    const path = item.points
+      .filter((point) => indexOf.has(point[0]))
+      .map((point, i) => `${i ? "L" : "M"}${xAt(indexOf.get(point[0])).toFixed(1)},${yAt(point[1]).toFixed(1)}`)
+      .join("");
+    svg.appendChild(svgEl("path", {d: path, fill: "none", stroke: color, "stroke-width": 2,
+                                   "stroke-linejoin": "round", "stroke-linecap": "round"}));
+  }
+
+  // --- 直接ラベル(4 系列まで)。重なる場合は上下にずらす ---
+  if (shown.length <= 4) {
+    const labels = shown.map((item) => {
+      const lastPoint = item.points[item.points.length - 1];
+      return {
+        text: item.tag.length > 6 ? item.tag.slice(0, 6) + "…" : item.tag,
+        color: colorFor(item.tag),
+        x: xAt(indexOf.get(lastPoint[0])) + 8,
+        y: yAt(lastPoint[1]),
+      };
+    }).sort((a, b) => a.y - b.y);
+
+    const gap = 14;
+    for (let i = 1; i < labels.length; i++) {
+      if (labels[i].y - labels[i - 1].y < gap) labels[i].y = labels[i - 1].y + gap;
+    }
+    const overflow = labels[labels.length - 1].y - (pad.top + plotH);
+    if (overflow > 0) {
+      const shift = Math.min(overflow, labels[0].y - pad.top);
+      for (const label of labels) label.y -= shift;
+    }
+
+    for (const label of labels) {
+      const text = svgEl("text", {x: label.x, y: label.y + 3.5, fill: label.color,
+                                  "font-size": 11, "font-weight": 700});
+      text.textContent = label.text;
+      svg.appendChild(text);
+    }
+  }
+
+  // --- ホバー用のレイヤ ---
+  const crosshair = svgEl("line", {y1: pad.top, y2: pad.top + plotH, stroke: "var(--axis)",
+                                   "stroke-width": 1, opacity: 0});
+  svg.appendChild(crosshair);
+  const dots = svgEl("g", {opacity: 0});
+  svg.appendChild(dots);
+  chartHit = {svg, dates, indexOf, xAt, yAt, shown, crosshair, dots, pad, plotW};
+}
+
+function niceCeil(value) {
+  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+  for (const step of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) {
+    if (value <= step * magnitude) return step * magnitude;
+  }
+  return 10 * magnitude;
+}
+
+function compact(value) {
+  if (value >= 10000) return (value / 10000).toFixed(value >= 100000 ? 0 : 1) + "万";
+  if (value >= 1000) return (value / 1000).toFixed(0) + "千";
+  return String(Math.round(value));
+}
+
+// --- ホバー(十字線 + ツールチップ) ---
+function onChartMove(event) {
+  if (!chartHit) return;
+  const {svg, dates, indexOf, xAt, yAt, shown, crosshair, dots, pad, plotW} = chartHit;
+  const rect = svg.getBoundingClientRect();
+  const scale = svg.viewBox.baseVal.width / rect.width;
+  const x = (event.clientX - rect.left) * scale;
+  if (x < pad.left - 20 || x > pad.left + plotW + 20) return onChartLeave();
+
+  const ratio = dates.length === 1 ? 0 : (x - pad.left) / plotW;
+  const index = Math.max(0, Math.min(dates.length - 1, Math.round(ratio * (dates.length - 1))));
+  const date = dates[index];
+
+  crosshair.setAttribute("x1", xAt(index));
+  crosshair.setAttribute("x2", xAt(index));
+  crosshair.setAttribute("opacity", 1);
+
+  dots.textContent = "";
+  const rows = [];
+  for (const item of shown) {
+    const point = item.points.find((p) => p[0] === date);
+    if (!point) continue;
+    rows.push({tag: item.tag, value: point[1], color: colorFor(item.tag)});
+    // 重なり対策に surface 色のリングを 2px 付ける
+    dots.appendChild(svgEl("circle", {cx: xAt(index), cy: yAt(point[1]), r: 4.5,
+                                      fill: colorFor(item.tag), stroke: "var(--surface)",
+                                      "stroke-width": 2}));
+  }
+  dots.setAttribute("opacity", 1);
+
+  const tooltip = $("tooltip");
+  rows.sort((a, b) => b.value - a.value);
+  tooltip.innerHTML =
+    `<div class="tt-date">${date}</div>` +
+    rows.map((row) =>
+      `<div class="tt-row"><span class="swatch" style="background:${row.color}"></span>` +
+      `<span>${escapeHTML(row.tag)}</span><span class="tt-val">${fmt(row.value)}</span></div>`
+    ).join("");
+  tooltip.style.opacity = 1;
+
+  const px = (xAt(index) / scale);
+  const wrapWidth = svg.parentElement.clientWidth;
+  const ttWidth = tooltip.offsetWidth;
+  tooltip.style.left = Math.max(0, Math.min(wrapWidth - ttWidth, px - ttWidth / 2)) + "px";
+  tooltip.style.top = "6px";
+}
+
+function onChartLeave() {
+  $("tooltip").style.opacity = 0;
+  if (!chartHit) return;
+  chartHit.crosshair.setAttribute("opacity", 0);
+  chartHit.dots.setAttribute("opacity", 0);
+}
+
+function escapeHTML(text) {
+  return text.replace(/[&<>"']/g, (char) =>
+    ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
+}
+
+// ============================ CSV の読み込み ============================
+
+function parseCSV(text) {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += char;
+      continue;
+    }
+    if (char === '"') inQuotes = true;
+    else if (char === ",") { row.push(field); field = ""; }
+    else if (char === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+    else if (char !== "\r") field += char;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((line) => line.length > 1 || line[0] !== "");
+}
+
+function seriesFromCSV(text) {
+  const rows = parseCSV(text);
+  if (!rows.length) throw new Error("CSV が空です");
+  const header = rows[0].map((cell) => cell.trim());
+  const iTag = header.indexOf("tag_name");
+  const iDate = header.indexOf("date");
+  const iViews = header.indexOf("views");
+  const iUrl = header.indexOf("article_url");
+  if (iTag < 0 || iDate < 0 || iViews < 0) {
+    throw new Error("tag_name / date / views 列が見つかりません");
+  }
+  const byTag = new Map();
+  for (const row of rows.slice(1)) {
+    const tag = (row[iTag] || "").trim();
+    const date = (row[iDate] || "").trim();
+    const views = Number((row[iViews] || "").trim());
+    if (!tag || !date || !Number.isFinite(views)) continue;
+    if (!byTag.has(tag)) byTag.set(tag, {tag, url: iUrl >= 0 ? (row[iUrl] || "") : "", points: []});
+    byTag.get(tag).points.push([date, views]);
+  }
+  if (!byTag.size) throw new Error("読み取れるデータ行がありませんでした");
+  return Array.from(byTag.values());
+}
+
+// ============================ イベント配線 ============================
+
+$("runBtn").addEventListener("click", startRun);
+$("cancelBtn").addEventListener("click", cancelRun);
+
+$("csvBtn").addEventListener("click", () => { window.location.href = "/api/csv"; });
+
+$("csvFile").addEventListener("change", async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  try {
+    const series = seriesFromCSV(await file.text());
+    state.selected.clear(); state.colorOf.clear(); state.hidden.clear();
+    state.userPickedSelection = false;
+    setSeries(series, true);
+    setPill(`${file.name} を表示中`, "done");
+  } catch (err) {
+    alert("CSV を読み込めませんでした: " + (err.message || err));
+  }
+  event.target.value = "";
+});
+
+$("selTop").addEventListener("click", () => {
+  state.selected.clear(); state.colorOf.clear(); state.hidden.clear();
+  state.userPickedSelection = false;   // 自動選択に戻す
+  selectTop(5); render();
+});
+$("selNone").addEventListener("click", () => {
+  state.selected.clear(); state.colorOf.clear(); state.hidden.clear();
+  state.userPickedSelection = true;
+  render();
+});
+
+for (const th of document.querySelectorAll("th.sortable")) {
+  th.addEventListener("click", () => {
+    const key = th.dataset.sort;
+    if (state.sortKey === key) state.sortAsc = !state.sortAsc;
+    else { state.sortKey = key; state.sortAsc = key === "tag"; }
+    renderTable();
+  });
+}
+
+const chart = $("chart");
+chart.addEventListener("mousemove", onChartMove);
+chart.addEventListener("mouseleave", onChartLeave);
+// タッチでは指を離してもツールチップを残す(離した瞬間に消えると読めないため)。
+// 消すのはグラフの外をタップしたとき。
+chart.addEventListener("touchstart", (e) => onChartMove(e.touches[0]), {passive: true});
+chart.addEventListener("touchmove", (e) => onChartMove(e.touches[0]), {passive: true});
+document.addEventListener("touchstart", (e) => {
+  if (!e.target.closest || !e.target.closest(".chart-wrap")) onChartLeave();
+}, {passive: true});
+
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (state.series.length) renderChart(); }, 150);
+});
+
+// 起動時: 直前のジョブが残っていれば拾う
+(async () => {
+  try {
+    const status = await (await fetch("/api/status")).json();
+    if (status.state === "running") {
+      $("progressCard").hidden = false;
+      $("runBtn").disabled = true; $("cancelBtn").disabled = false;
+      setPill("取得中…", "running");
+      poll();
+      state.polling = setInterval(poll, 900);
+    } else if (status.state && status.state !== "idle") {
+      await loadResult();
+      if (state.series.length) setPill("前回の結果を表示中", "done");
+    }
+  } catch (_) { /* サーバ未応答なら何もしない */ }
+})();
+</script>
+</body>
+</html>
